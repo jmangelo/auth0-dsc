@@ -1,0 +1,94 @@
+preconditions:
+  settings:
+    enable_client_connections: false
+    enable_apis_section: true
+apis:
+  - &api_test
+    name: "api_test"
+    identifier: "https://api.example.com"
+    scopes:
+      - 
+        value: "read:examples"
+        description: "read examples"
+      - 
+        value: "create:examples"
+        description: "create examples"
+    signing_alg: "HS256"
+    signing_secret: "hs256keyhs256keyhs256keyhs256key"
+    token_lifetime: 3600
+    token_lifetime_for_web: 3600
+    skip_consent_for_verifiable_first_party_clients: true
+    allow_offline_access: false
+clients:
+  - &web_test
+    name: "web_test"
+    callbacks:
+      - "https://${{system.authority}}/oauth/callback"
+    token_endpoint_auth_method: "client_secret_post"
+    app_type: "regular_web"
+    grants:
+      - 
+        audience: *api_test
+        scope:
+          - "read:examples"
+connections:
+  -
+    name: "db-custom"
+    strategy: "auth0"
+    enabled_clients:
+      - *web_test
+    options:
+      enabledDatabaseCustomization: true
+      import_mode: true
+      customScripts:
+        login: |
+          function login (email, password, callback) {
+            return callback(null, { 
+              "email": "iu1@example.com", 
+              "email_verified": true, 
+              "user_metadata": { "uid": "uid::iu1" }, 
+              "nickname": "iu-one", 
+              "app_metadata": { "security_questions": [] }
+            });
+
+            return callback(new Error("Ups!"));
+          }
+        get_user: |
+          function getByEmail (email, callback) {
+            return callback(new Error("Ups!"));
+          }
+  - &db1
+    name: "db1"
+    strategy: "auth0"
+    enabled_clients:
+      - *web_test
+users:
+  -
+    connection: *db1
+    email: "user1@example.com"
+    password: "user1"
+rules:
+  -
+    name: "sample-rule"
+    enabled: true
+    script: |
+      function (user, context, callback) {
+        // TODO - implement your rule for #{{clients.default.client_id}}
+        callback(null, user, context);
+      }
+email_provider:
+  name: "smtp"
+  credentials:
+    smtp_host: "smtp.postmarkapp.com"
+    smtp_port: 587
+    smtp_user: "ecadf775-1ec2-475b-a938-09ed676c1dbd"
+    smtp_pass: "ecadf775-1ec2-475b-a938-09ed676c1dbd"
+  enabled: false
+  default_from_address: "joao.angelo@auth0.com"
+settings:
+  default_audience: ""
+  default_directory: ""
+  flags:
+    enable_apis_section: true
+  allowed_logout_urls: []
+  session_lifetime: 26
