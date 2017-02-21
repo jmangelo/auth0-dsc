@@ -1,0 +1,25 @@
+{
+  "name": "dsc",
+  "version": "0.1.0",
+  "description": "A npm module/CLI that leverages the Auth0 Management API to automate account configuration based on a YAML template.",
+  "bin": {
+    "dsc": "./src/index.js"
+  },
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "private": true,
+  "author": "João Angelo",
+  "license": "ISC",
+  "dependencies": {
+    "auth0": "^2.1.0",
+    "concat-stream": "^1.6.0",
+    "js-yaml": "^3.7.0",
+    "jwt-decode": "^2.1.0",
+    "lodash": "^4.17.2",
+    "mustache": "^2.3.0",
+    "superagent": "^3.3.0",
+    "yargs": "^6.6.0"
+  }
+}
