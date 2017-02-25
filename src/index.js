@@ -81,6 +81,8 @@ function execute(template, config, account) {
     });
   });
 
+  dsc.preconditions = dsc.preconditions || {};
+
   // console.log(JSON.stringify(dsc, null, 2));
   // return Promise.resolve(configured);
 
@@ -94,42 +96,87 @@ function execute(template, config, account) {
   var stage2 = [() => Promise.resolve(1)];
   var stage3 = [() => Promise.resolve(1)];
   var stage4 = [() => Promise.resolve(1)];
+  var stage5 = [() => Promise.resolve(1)];
 
-  if (dsc.apis.length > 0) {
+  if (dsc.preconditions.apis || dsc.apis.length > 0) {
     stage0.push(mgt.resourceServers.getAll({ fields: "name,id" }).then(apis => current.apis = apis));
   }
 
-  if (dsc.clients.length > 0) {
-    stage0.push(mgt.clients.getAll({ fields: "name,client_id" }).then(clients => current.clients = clients));
+  if (dsc.preconditions.clients || dsc.clients.length > 0) {
+    stage0.push(mgt.clients.getAll({ fields: "name,client_id,global" }).then(clients => current.clients = clients));
   }
 
-  if (dsc.connections.length > 0) {
+  if (dsc.preconditions.connections || dsc.connections.length > 0) {
     stage0.push(mgt.connections.getAll({ fields: "name,id" }).then(connections => current.connections = connections));
   }
 
-  if (dsc.rules.length > 0) {
+  if (dsc.preconditions.rules || dsc.rules.length > 0) {
     stage0.push(mgt.rules.getAll({ fields: "name,id" }).then(rules => current.rules = rules));
   }
 
-  if (dsc.preconditions && dsc.preconditions.settings) {
+  if (dsc.preconditions.settings) {
     stage0.push(() => mgt.tenant.updateSettings({ flags: dsc.preconditions.settings }));
   }
 
-  dsc.apis.forEach(api => {
+  if (dsc.preconditions.apis === "clear") {
     stage1.push(() => {
+      let apis = _.filter(current.apis, (api) => !api.is_system);
+
+      current.apis = [];
+
+      return Promise.all(apis.map(api => mgt.resourceServers.delete({ id: api.id })));
+    });
+  }
+
+  if (dsc.preconditions.clients === "clear") {
+    stage1.push(() => {
+      let clients = _.filter(current.clients, c => !c.global && c.client_id !== account.clientId);
+
+      current.clients = [];
+
+      return Promise.all(clients.map(c => mgt.clients.delete({ client_id: c.client_id })));
+    });
+  }
+
+  if (dsc.preconditions.connections === "clear") {
+    stage1.push(() => {
+      let connections = current.connections;
+
+      current.connections = [];
+
+      return Promise.all(connections.map(c => mgt.connections.delete({ id: c.id })));
+    });
+  }
+
+  if (dsc.preconditions.rules === "disable") {
+    stage1.push(() => {
+      return Promise.all(current.rules.map(r => mgt.rules.update({ id: r.id }, { enabled: false })));
+    });
+  } else if (dsc.preconditions.rules === "clear") {
+    stage1.push(() => {
+      let rules = current.rules;
+
+      current.rules = [];
+
+      return Promise.all(rules.map(r => mgt.rules.delete({ id: r.id })));
+    });
+  }
+
+  dsc.apis.forEach(api => {
+    stage2.push(() => {
       var clones = _.filter(current.apis, { name: api.key });
 
       return Promise.all(clones.map(clone => mgt.resourceServers.delete({ id: clone.id })));
     });
 
-    stage2.push(() => mgt.resourceServers.create(api).then(created => configured.apis[api.alias] = created));
+    stage3.push(() => mgt.resourceServers.create(api).then(created => configured.apis[api.alias] = created));
   });
 
   dsc.clients.forEach(client => {
     let grants = client.grants;
 
     if (grants) {
-      stage3.push(() => {
+      stage4.push(() => {
         grants = grants.map(grant => {
           grant.client_id = configured.clients[client.alias].client_id;
           grant.audience = grant.audience.key ? configured.apis[grant.audience.alias].identifier : grant.audience;
@@ -143,26 +190,26 @@ function execute(template, config, account) {
 
     delete client.grants;
 
-    stage1.push(() => {
+    stage2.push(() => {
       var clones = _.filter(current.clients, { name: client.key });
 
       return Promise.all(clones.map(clone => mgt.clients.delete({ client_id: clone.client_id })));
     });
 
-    stage2.push(() => mgt.clients.create(client).then(created => {
+    stage3.push(() => mgt.clients.create(client).then(created => {
       configured.clients[client.alias] = created;
       configured.clients[client.alias].grants = [];
     }));
   });
 
   dsc.connections.forEach(connection => {
-    stage1.push(() => {
+    stage2.push(() => {
       var clone = _.find(current.connections, { name: connection.key });
 
       return clone ? mgt.connections.delete({ id: clone.id }) : Promise.resolve(1);
     });
 
-    stage3.push(() => {
+    stage4.push(() => {
       if (connection.enabled_clients) {
         connection.enabled_clients = connection.enabled_clients.map(client => client.key ? configured.clients[client.alias].client_id : client);
         connection.enabled_clients = _.union(connection.enabled_clients, [account.clientId]);
@@ -173,19 +220,19 @@ function execute(template, config, account) {
   });
 
   dsc.users.forEach(user => {
-    stage4.push(() => {
+    stage5.push(() => {
       return mgt.users.create(user).then(created => configured.users[user.alias] = created);
     });
   });
 
   dsc.rules.forEach(rule => {
-    stage1.push(() => {
+    stage2.push(() => {
       var clone = _.find(current.rules, { name: rule.key });
 
       return clone ? mgt.rules.delete({ id: clone.id }) : Promise.resolve(1);
     });
 
-    stage4.push(() => {
+    stage5.push(() => {
       rule.script = mustache.render(rule.script, configured);
 
       return mgt.rules.create(rule).then(created => configured.rules[rule.alias] = created);
@@ -193,11 +240,11 @@ function execute(template, config, account) {
   });
 
   if (dsc.email_provider) {
-    stage4.push(() => mgt.emailProvider.update({}, dsc.email_provider).then(s => configured.email_provider = s));
+    stage5.push(() => mgt.emailProvider.update({}, dsc.email_provider).then(s => configured.email_provider = s));
   }
 
   if (dsc.settings) {
-    stage4.push(() => {
+    stage5.push(() => {
       dsc.settings.default_audience = dsc.settings.default_audience.identifier || dsc.settings.default_audience;
       dsc.settings.default_directory = dsc.settings.default_directory.name || dsc.settings.default_directory;
 
@@ -206,7 +253,9 @@ function execute(template, config, account) {
   }
 
   function run(stage) {
-    return Promise.all(stage.map(fn => fn()));
+    return Promise.all(stage.map(fn => {
+      try { return fn(); } catch (error) { console.log(error.stack); return Promise.reject(error); }
+    }));
   }
 
   return new Promise((resolve, reject) => {
@@ -215,6 +264,7 @@ function execute(template, config, account) {
       .then(() => run(stage2))
       .then(() => run(stage3))
       .then(() => run(stage4))
+      .then(() => run(stage5))
       .then(() => resolve(configured))
       .catch((error) => reject(error));
   });
