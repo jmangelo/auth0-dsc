@@ -252,7 +252,7 @@ function execute(template, config, account) {
   });
 
   if (dsc.email_provider) {
-    stage5.push(() => mgt.emailProvider.update({}, dsc.email_provider).then(s => configured.email_provider = s));
+    stage1.push(() => mgt.emailProvider.update({}, dsc.email_provider).then(s => configured.email_provider = s));
   }
 
   if (dsc.email_templates) {
