@@ -87,6 +87,7 @@ function execute(template, config, account) {
   // return Promise.resolve(configured);
 
   var mgt = new auth0.ManagementClient(account);
+  var auth = new auth0.AuthenticationClient({ domain: account.domain });
 
   // Immediate stage
   var stage0 = [Promise.resolve(1)];
@@ -102,8 +103,8 @@ function execute(template, config, account) {
     stage0.push(mgt.resourceServers.getAll({ fields: "name,id" }).then(apis => current.apis = apis));
   }
 
-  if (dsc.preconditions.clients || dsc.clients.length > 0) {
-    stage0.push(mgt.clients.getAll({ fields: "name,client_id,global" }).then(clients => current.clients = clients));
+  if (dsc.preconditions.clients || dsc.email_templates || dsc.clients.length > 0) {
+    stage0.push(mgt.clients.getAll({ fields: "name,client_id,client_secret,global" }).then(clients => current.clients = clients));
   }
 
   if (dsc.preconditions.connections || dsc.connections.length > 0) {
@@ -116,6 +117,17 @@ function execute(template, config, account) {
 
   if (dsc.preconditions.settings) {
     stage0.push(() => mgt.tenant.updateSettings({ flags: dsc.preconditions.settings }));
+  }
+
+  if (dsc.email_templates) {
+    stage1.push(() => {
+      let globalClient = _.find(current.clients, c => c.global);
+
+      return auth.clientCredentialsGrant({
+        client_id: globalClient.client_id,
+        client_secret: globalClient.client_secret
+      }).then(response => current.v1 = { access_token: response.access_token });
+    });
   }
 
   if (dsc.preconditions.apis === "clear") {
@@ -241,6 +253,48 @@ function execute(template, config, account) {
 
   if (dsc.email_provider) {
     stage5.push(() => mgt.emailProvider.update({}, dsc.email_provider).then(s => configured.email_provider = s));
+  }
+
+  if (dsc.email_templates) {
+    Object.keys(dsc.email_templates).forEach(template => {
+      dsc.email_templates[template].template = template;
+
+      stage5.push(() => {
+        configured.email_templates = {};
+
+        dsc.email_templates[template].resultUrl = dsc.email_templates[template].resultUrl || "";
+        dsc.email_templates[template].resultUrl = mustache.render(dsc.email_templates[template].resultUrl, configured);
+        dsc.email_templates[template].body = mustache.render(dsc.email_templates[template].body, configured);
+
+        return new Promise((resolve, reject) => {
+          request.get(`https://${account.domain}/api/emails/${template}`)
+            .set("Authorization", `Bearer ${current.v1.access_token}`)
+            .end(function (err, response) {
+              if (!err && response.statusCode === 200) {
+                request.put(`https://${account.domain}/api/emails/${template}`)
+                  .set("Authorization", `Bearer ${current.v1.access_token}`)
+                  .send(dsc.email_templates[template]).type('application/json')
+                  .end(function (err, response) {
+                    if (!err && response.statusCode == 200) {
+                      configured.email_templates[template] = dsc.email_templates[template];
+                      resolve();
+                    } else { reject(new Error("Failed to update an email template.")); }
+                  });
+              } else if (response.statusCode === 404) {
+                request.post(`https://${account.domain}/api/emails`)
+                  .set("Authorization", `Bearer ${current.v1.access_token}`)
+                  .send(dsc.email_templates[template]).type('application/json')
+                  .end(function (err, response) {
+                    if (!err && response.statusCode == 200) {
+                      configured.email_templates[template] = response.body;
+                      resolve();
+                    } else { reject(new Error("Failed to update an email template.")); }
+                  });
+              } else { reject(new Error("Failed to retrieve an email template.")); }
+            });
+        });
+      });
+    });
   }
 
   if (dsc.settings) {
