@@ -40,288 +40,289 @@ function execute(template, config, account) {
     dsc = yaml.safeLoad(mustache.render(template, config));
 
     mustache.tags = ["#{{", "}}"];
-  } catch (error) {
-    return Promise.reject(error);
-  }
 
-  let collections = [
-    { name: "apis", key: function () { return this.name; } },
-    { name: "clients", key: function () { return this.name; } },
-    { name: "connections", key: function () { return this.name; } },
-    {
-      name: "users",
-      key: function () { return this.connection + "|" + (this.email || this.username); },
-      preprocess: function () { this.connection = this.connection.key || this.connection; }
-    },
-    { name: "rules", key: function () { return this.name; } }
-  ];
 
-  var current = {};
-  var configured = {};
+    let collections = [
+      { name: "apis", key: function () { return this.name; } },
+      { name: "clients", key: function () { return this.name; } },
+      { name: "connections", key: function () { return this.name; } },
+      {
+        name: "users",
+        key: function () { return this.connection + "|" + (this.email || this.username); },
+        preprocess: function () { this.connection = this.connection.key || this.connection; }
+      },
+      { name: "rules", key: function () { return this.name; } }
+    ];
 
-  collections.forEach(collection => {
-    current[collection.name] = [];
-    configured[collection.name] = {};
+    var current = {};
+    var configured = {};
 
-    let elements = dsc[collection.name] = dsc[collection.name] || [];
+    collections.forEach(collection => {
+      current[collection.name] = [];
+      configured[collection.name] = {};
 
-    elements.forEach(element => {
-      if (collection.preprocess) {
-        collection.preprocess.call(element);
-      }
+      let elements = dsc[collection.name] = dsc[collection.name] || [];
 
-      Object.defineProperty(element, "_alias", { enumerable: false });
-      Object.defineProperty(element, "key", { enumerable: false, get: collection.key });
-      Object.defineProperty(element, "alias", {
-        enumerable: false,
-        get: function () {
-          return element._alias || (elements.length === 1 && "default") || element.key
+      elements.forEach(element => {
+        if (collection.preprocess) {
+          collection.preprocess.call(element);
         }
+
+        Object.defineProperty(element, "_alias", { enumerable: false });
+        Object.defineProperty(element, "key", { enumerable: false, get: collection.key });
+        Object.defineProperty(element, "alias", {
+          enumerable: false,
+          get: function () {
+            return element._alias || (elements.length === 1 && "default") || element.key
+          }
+        });
       });
     });
-  });
 
-  dsc.preconditions = dsc.preconditions || {};
+    dsc.preconditions = dsc.preconditions || {};
 
-  // console.log(JSON.stringify(dsc, null, 2));
-  // return Promise.resolve(configured);
+    // console.log(JSON.stringify(dsc, null, 2));
+    // return Promise.resolve(configured);
 
-  var mgt = new auth0.ManagementClient(account);
-  var auth = new auth0.AuthenticationClient({ domain: account.domain });
+    var mgt = new auth0.ManagementClient(account);
+    var auth = new auth0.AuthenticationClient({ domain: account.domain });
 
-  // Immediate stage
-  var stage0 = [Promise.resolve(1)];
+    // Immediate stage
+    var stage0 = [Promise.resolve(1)];
 
-  // Delayed stages
-  var stage1 = [() => Promise.resolve(1)];
-  var stage2 = [() => Promise.resolve(1)];
-  var stage3 = [() => Promise.resolve(1)];
-  var stage4 = [() => Promise.resolve(1)];
-  var stage5 = [() => Promise.resolve(1)];
+    // Delayed stages
+    var stage1 = [() => Promise.resolve(1)];
+    var stage2 = [() => Promise.resolve(1)];
+    var stage3 = [() => Promise.resolve(1)];
+    var stage4 = [() => Promise.resolve(1)];
+    var stage5 = [() => Promise.resolve(1)];
 
-  if (dsc.preconditions.apis || dsc.apis.length > 0) {
-    stage0.push(mgt.resourceServers.getAll({ fields: "name,id" }).then(apis => current.apis = apis));
-  }
+    if (dsc.preconditions.apis || dsc.apis.length > 0) {
+      stage0.push(mgt.resourceServers.getAll({ fields: "name,id" }).then(apis => current.apis = apis));
+    }
 
-  if (dsc.preconditions.clients || dsc.email_templates || dsc.clients.length > 0) {
-    stage0.push(mgt.clients.getAll({ fields: "name,client_id,client_secret,global" }).then(clients => current.clients = clients));
-  }
+    if (dsc.preconditions.clients || dsc.email_templates || dsc.clients.length > 0) {
+      stage0.push(mgt.clients.getAll({ fields: "name,client_id,client_secret,global" }).then(clients => current.clients = clients));
+    }
 
-  if (dsc.preconditions.connections || dsc.connections.length > 0) {
-    stage0.push(mgt.connections.getAll({ fields: "name,id" }).then(connections => current.connections = connections));
-  }
+    if (dsc.preconditions.connections || dsc.connections.length > 0) {
+      stage0.push(mgt.connections.getAll({ fields: "name,id" }).then(connections => current.connections = connections));
+    }
 
-  if (dsc.preconditions.rules || dsc.rules.length > 0) {
-    stage0.push(mgt.rules.getAll({ fields: "name,id" }).then(rules => current.rules = rules));
-  }
+    if (dsc.preconditions.rules || dsc.rules.length > 0) {
+      stage0.push(mgt.rules.getAll({ fields: "name,id" }).then(rules => current.rules = rules));
+    }
 
-  if (dsc.preconditions.settings) {
-    stage0.push(() => mgt.tenant.updateSettings({ flags: dsc.preconditions.settings }));
-  }
+    if (dsc.preconditions.settings) {
+      stage0.push(mgt.tenant.updateSettings({ flags: dsc.preconditions.settings }));
+    }
 
-  if (dsc.email_templates) {
-    stage1.push(() => {
-      let globalClient = _.find(current.clients, c => c.global);
+    if (dsc.email_templates) {
+      stage1.push(() => {
+        let globalClient = _.find(current.clients, c => c.global);
 
-      return auth.clientCredentialsGrant({
-        client_id: globalClient.client_id,
-        client_secret: globalClient.client_secret
-      }).then(response => current.v1 = { access_token: response.access_token });
-    });
-  }
-
-  if (dsc.preconditions.apis === "clear") {
-    stage1.push(() => {
-      let apis = _.filter(current.apis, (api) => !api.is_system);
-
-      current.apis = [];
-
-      return Promise.all(apis.map(api => mgt.resourceServers.delete({ id: api.id })));
-    });
-  }
-
-  if (dsc.preconditions.clients === "clear") {
-    stage1.push(() => {
-      let clients = _.filter(current.clients, c => !c.global && c.client_id !== account.clientId);
-
-      current.clients = [];
-
-      return Promise.all(clients.map(c => mgt.clients.delete({ client_id: c.client_id })));
-    });
-  }
-
-  if (dsc.preconditions.connections === "clear") {
-    stage1.push(() => {
-      let connections = current.connections;
-
-      current.connections = [];
-
-      return Promise.all(connections.map(c => mgt.connections.delete({ id: c.id })));
-    });
-  }
-
-  if (dsc.preconditions.rules === "disable") {
-    stage1.push(() => {
-      return Promise.all(current.rules.map(r => mgt.rules.update({ id: r.id }, { enabled: false })));
-    });
-  } else if (dsc.preconditions.rules === "clear") {
-    stage1.push(() => {
-      let rules = current.rules;
-
-      current.rules = [];
-
-      return Promise.all(rules.map(r => mgt.rules.delete({ id: r.id })));
-    });
-  }
-
-  dsc.apis.forEach(api => {
-    stage2.push(() => {
-      var clones = _.filter(current.apis, { name: api.key });
-
-      return Promise.all(clones.map(clone => mgt.resourceServers.delete({ id: clone.id })));
-    });
-
-    stage3.push(() => mgt.resourceServers.create(api).then(created => configured.apis[api.alias] = created));
-  });
-
-  dsc.clients.forEach(client => {
-    let grants = client.grants;
-
-    if (grants) {
-      stage4.push(() => {
-        grants = grants.map(grant => {
-          grant.client_id = configured.clients[client.alias].client_id;
-          grant.audience = grant.audience.key ? configured.apis[grant.audience.alias].identifier : grant.audience;
-
-          return grant;
-        });
-
-        return Promise.all(grants.map(grant => mgt.clientGrants.create(grant).then(created => configured.clients[client.alias].grants.push(created))));
+        return auth.clientCredentialsGrant({
+          client_id: globalClient.client_id,
+          client_secret: globalClient.client_secret
+        }).then(response => current.v1 = { access_token: response.access_token });
       });
     }
 
-    delete client.grants;
+    if (dsc.preconditions.apis === "clear") {
+      stage1.push(() => {
+        let apis = _.filter(current.apis, (api) => !api.is_system);
 
-    stage2.push(() => {
-      var clones = _.filter(current.clients, { name: client.key });
+        current.apis = [];
 
-      return Promise.all(clones.map(clone => mgt.clients.delete({ client_id: clone.client_id })));
+        return Promise.all(apis.map(api => mgt.resourceServers.delete({ id: api.id })));
+      });
+    }
+
+    if (dsc.preconditions.clients === "clear") {
+      stage1.push(() => {
+        let clients = _.filter(current.clients, c => !c.global && c.client_id !== account.clientId);
+
+        current.clients = [];
+
+        return Promise.all(clients.map(c => mgt.clients.delete({ client_id: c.client_id })));
+      });
+    }
+
+    if (dsc.preconditions.connections === "clear") {
+      stage1.push(() => {
+        let connections = current.connections;
+
+        current.connections = [];
+
+        return Promise.all(connections.map(c => mgt.connections.delete({ id: c.id })));
+      });
+    }
+
+    if (dsc.preconditions.rules === "disable") {
+      stage1.push(() => {
+        return Promise.all(current.rules.map(r => mgt.rules.update({ id: r.id }, { enabled: false })));
+      });
+    } else if (dsc.preconditions.rules === "clear") {
+      stage1.push(() => {
+        let rules = current.rules;
+
+        current.rules = [];
+
+        return Promise.all(rules.map(r => mgt.rules.delete({ id: r.id })));
+      });
+    }
+
+    dsc.apis.forEach(api => {
+      stage2.push(() => {
+        var clones = _.filter(current.apis, { name: api.key });
+
+        return Promise.all(clones.map(clone => mgt.resourceServers.delete({ id: clone.id })));
+      });
+
+      stage3.push(() => mgt.resourceServers.create(api).then(created => configured.apis[api.alias] = created));
     });
 
-    stage3.push(() => mgt.clients.create(client).then(created => {
-      configured.clients[client.alias] = created;
-      configured.clients[client.alias].grants = [];
-    }));
-  });
+    dsc.clients.forEach(client => {
+      let grants = client.grants;
 
-  dsc.connections.forEach(connection => {
-    stage2.push(() => {
-      var clone = _.find(current.connections, { name: connection.key });
+      if (grants) {
+        stage4.push(() => {
+          grants = grants.map(grant => {
+            grant.client_id = configured.clients[client.alias].client_id;
+            grant.audience = grant.audience.key ? configured.apis[grant.audience.alias].identifier : grant.audience;
 
-      return clone ? mgt.connections.delete({ id: clone.id }) : Promise.resolve(1);
-    });
+            return grant;
+          });
 
-    stage4.push(() => {
-      if (connection.enabled_clients) {
-        connection.enabled_clients = connection.enabled_clients.map(client => client.key ? configured.clients[client.alias].client_id : client);
-        connection.enabled_clients = _.union(connection.enabled_clients, [account.clientId]);
+          return Promise.all(grants.map(grant => mgt.clientGrants.create(grant).then(created => configured.clients[client.alias].grants.push(created))));
+        });
       }
 
-      return mgt.connections.create(connection).then(created => configured.connections[connection.alias] = created);
-    });
-  });
+      delete client.grants;
 
-  dsc.users.forEach(user => {
-    stage5.push(() => {
-      return mgt.users.create(user).then(created => configured.users[user.alias] = created);
-    });
-  });
+      stage2.push(() => {
+        var clones = _.filter(current.clients, { name: client.key });
 
-  dsc.rules.forEach(rule => {
-    stage2.push(() => {
-      var clone = _.find(current.rules, { name: rule.key });
+        return Promise.all(clones.map(clone => mgt.clients.delete({ client_id: clone.client_id })));
+      });
 
-      return clone ? mgt.rules.delete({ id: clone.id }) : Promise.resolve(1);
+      stage3.push(() => mgt.clients.create(client).then(created => {
+        configured.clients[client.alias] = created;
+        configured.clients[client.alias].grants = [];
+      }));
     });
 
-    stage5.push(() => {
-      rule.script = mustache.render(rule.script, configured);
+    dsc.connections.forEach(connection => {
+      stage2.push(() => {
+        var clone = _.find(current.connections, { name: connection.key });
 
-      return mgt.rules.create(rule).then(created => configured.rules[rule.alias] = created);
-    });
-  });
+        return clone ? mgt.connections.delete({ id: clone.id }) : Promise.resolve(1);
+      });
 
-  if (dsc.email_provider) {
-    stage1.push(() => mgt.emailProvider.update({}, dsc.email_provider).then(s => configured.email_provider = s));
-  }
+      stage4.push(() => {
+        if (connection.enabled_clients) {
+          connection.enabled_clients = connection.enabled_clients.map(client => client.key ? configured.clients[client.alias].client_id : client);
+          connection.enabled_clients = _.union(connection.enabled_clients, [account.clientId]);
+        }
 
-  if (dsc.email_templates) {
-    Object.keys(dsc.email_templates).forEach(template => {
-      dsc.email_templates[template].template = template;
-
-      stage5.push(() => {
-        configured.email_templates = {};
-
-        dsc.email_templates[template].resultUrl = dsc.email_templates[template].resultUrl || "";
-        dsc.email_templates[template].resultUrl = mustache.render(dsc.email_templates[template].resultUrl, configured);
-        dsc.email_templates[template].body = mustache.render(dsc.email_templates[template].body, configured);
-
-        return new Promise((resolve, reject) => {
-          request.get(`https://${account.domain}/api/emails/${template}`)
-            .set("Authorization", `Bearer ${current.v1.access_token}`)
-            .end(function (err, response) {
-              if (!err && response.statusCode === 200) {
-                request.put(`https://${account.domain}/api/emails/${template}`)
-                  .set("Authorization", `Bearer ${current.v1.access_token}`)
-                  .send(dsc.email_templates[template]).type('application/json')
-                  .end(function (err, response) {
-                    if (!err && response.statusCode == 200) {
-                      configured.email_templates[template] = dsc.email_templates[template];
-                      resolve();
-                    } else { reject(new Error("Failed to update an email template.")); }
-                  });
-              } else if (response.statusCode === 404) {
-                request.post(`https://${account.domain}/api/emails`)
-                  .set("Authorization", `Bearer ${current.v1.access_token}`)
-                  .send(dsc.email_templates[template]).type('application/json')
-                  .end(function (err, response) {
-                    if (!err && response.statusCode == 200) {
-                      configured.email_templates[template] = response.body;
-                      resolve();
-                    } else { reject(new Error("Failed to update an email template.")); }
-                  });
-              } else { reject(new Error("Failed to retrieve an email template.")); }
-            });
-        });
+        return mgt.connections.create(connection).then(created => configured.connections[connection.alias] = created);
       });
     });
-  }
 
-  if (dsc.settings) {
-    stage5.push(() => {
-      dsc.settings.default_audience = dsc.settings.default_audience.identifier || dsc.settings.default_audience;
-      dsc.settings.default_directory = dsc.settings.default_directory.name || dsc.settings.default_directory;
-
-      return mgt.tenant.updateSettings(dsc.settings).then(s => configured.settings = s);
+    dsc.users.forEach(user => {
+      stage5.push(() => {
+        return mgt.users.create(user).then(created => configured.users[user.alias] = created);
+      });
     });
-  }
 
-  function run(stage) {
-    return Promise.all(stage.map(fn => {
-      try { return fn(); } catch (error) { console.log(error.stack); return Promise.reject(error); }
-    }));
-  }
+    dsc.rules.forEach(rule => {
+      stage2.push(() => {
+        var clone = _.find(current.rules, { name: rule.key });
 
-  return new Promise((resolve, reject) => {
-    Promise.all(stage0)
-      .then(() => run(stage1))
-      .then(() => run(stage2))
-      .then(() => run(stage3))
-      .then(() => run(stage4))
-      .then(() => run(stage5))
-      .then(() => resolve(configured))
-      .catch((error) => reject(error));
-  });
+        return clone ? mgt.rules.delete({ id: clone.id }) : Promise.resolve(1);
+      });
+
+      stage5.push(() => {
+        rule.script = mustache.render(rule.script, configured);
+
+        return mgt.rules.create(rule).then(created => configured.rules[rule.alias] = created);
+      });
+    });
+
+    if (dsc.email_provider) {
+      stage1.push(() => mgt.emailProvider.update({}, dsc.email_provider).then(s => configured.email_provider = s));
+    }
+
+    if (dsc.email_templates) {
+      Object.keys(dsc.email_templates).forEach(template => {
+        dsc.email_templates[template].template = template;
+
+        stage5.push(() => {
+          configured.email_templates = {};
+
+          dsc.email_templates[template].resultUrl = dsc.email_templates[template].resultUrl || "";
+          dsc.email_templates[template].resultUrl = mustache.render(dsc.email_templates[template].resultUrl, configured);
+          dsc.email_templates[template].body = mustache.render(dsc.email_templates[template].body, configured);
+
+          return new Promise((resolve, reject) => {
+            request.get(`https://${account.domain}/api/emails/${template}`)
+              .set("Authorization", `Bearer ${current.v1.access_token}`)
+              .end(function (err, response) {
+                if (!err && response.statusCode === 200) {
+                  request.put(`https://${account.domain}/api/emails/${template}`)
+                    .set("Authorization", `Bearer ${current.v1.access_token}`)
+                    .send(dsc.email_templates[template]).type('application/json')
+                    .end(function (err, response) {
+                      if (!err && response.statusCode == 200) {
+                        configured.email_templates[template] = dsc.email_templates[template];
+                        resolve();
+                      } else { reject(new Error("Failed to update an email template.")); }
+                    });
+                } else if (response.statusCode === 404) {
+                  request.post(`https://${account.domain}/api/emails`)
+                    .set("Authorization", `Bearer ${current.v1.access_token}`)
+                    .send(dsc.email_templates[template]).type('application/json')
+                    .end(function (err, response) {
+                      if (!err && response.statusCode == 200) {
+                        configured.email_templates[template] = response.body;
+                        resolve();
+                      } else { reject(new Error("Failed to update an email template.")); }
+                    });
+                } else { reject(new Error("Failed to retrieve an email template.")); }
+              });
+          });
+        });
+      });
+    }
+
+    if (dsc.settings) {
+      stage5.push(() => {
+        dsc.settings.default_audience = dsc.settings.default_audience.identifier || dsc.settings.default_audience;
+        dsc.settings.default_directory = dsc.settings.default_directory.name || dsc.settings.default_directory;
+
+        return mgt.tenant.updateSettings(dsc.settings).then(s => configured.settings = s);
+      });
+    }
+
+    function run(stage) {
+      return Promise.all(stage.map(fn => {
+        try { return fn(); } catch (error) { return Promise.reject(error); }
+      }));
+    }
+
+    return new Promise((resolve, reject) => {
+      Promise.all(stage0)
+        .then(() => run(stage1))
+        .then(() => run(stage2))
+        .then(() => run(stage3))
+        .then(() => run(stage4))
+        .then(() => run(stage5))
+        .then(() => resolve(configured))
+        .catch((error) => { reject(error); });
+    });
+  } catch (error) {
+    return Promise.reject(error);
+  }
 }
 
 function cli() {
