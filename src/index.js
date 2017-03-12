@@ -55,7 +55,7 @@ function execute(template, config, account) {
     ];
 
     var current = {};
-    var configured = {};
+    var configured = { tenant: { authority: account.domain } };
 
     collections.forEach(collection => {
       current[collection.name] = [];
@@ -376,8 +376,12 @@ function cli() {
   }
 
   function getAccountInfo(data) {
+    data.dsc = data.dsc || {};
+
     if (argv.client || argv.secret) {
       return getAccessToken(argv.target, argv.client, argv.secret).then(token => {
+        data.dsc.domain = argv.target;
+
         return { domain: argv.target, token: token, clientId: argv.client }
       });
     } else if (argv.target) {
@@ -386,6 +390,8 @@ function cli() {
 
       let domain = url.parse(claims.iss).hostname;
       let clientId = claims.sub.split("@")[0];
+
+      data.dsc.domain = domain;
 
       return Promise.resolve({ domain: domain, token: token, clientId: clientId });
     } else if (data.dsc.domain && data.dsc.client_id && data.dsc.client_secret) {
