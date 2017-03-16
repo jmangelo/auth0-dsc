@@ -225,6 +225,10 @@ function execute(template, config, account) {
           connection.enabled_clients = _.union(connection.enabled_clients, [account.clientId]);
         }
 
+        if (connection.options && connection.options.idpinitiated && connection.options.idpinitiated.client_id) {
+          connection.options.idpinitiated.client_id = connection.options.idpinitiated.client_id.key ? configured.clients[connection.options.idpinitiated.client_id.alias].client_id : connection.options.idpinitiated.client_id;
+        }
+
         return mgt.connections.create(connection).then(created => configured.connections[connection.alias] = created);
       });
     });
