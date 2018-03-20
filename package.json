@@ -13,7 +13,7 @@
   "author": "João Angelo",
   "license": "ISC",
   "dependencies": {
-    "auth0": "^2.6.0",
+    "auth0": "^2.9.1",
     "concat-stream": "^1.6.0",
     "js-yaml": "^3.7.0",
     "jwt-decode": "^2.1.0",
