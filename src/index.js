@@ -41,7 +41,6 @@ function execute(template, config, account) {
 
     mustache.tags = ["#{{", "}}"];
 
-
     let collections = [
       { name: "apis", key: function () { return this.name; } },
       { name: "clients", key: function () { return this.name; } },
@@ -116,6 +115,8 @@ function execute(template, config, account) {
     if (dsc.preconditions.settings) {
       stage0.push(mgt.tenant.updateSettings({ flags: dsc.preconditions.settings }));
     }
+
+    stage0.push(mgt.customDomains.getAll().then(cnames => configured.tenant.cnames = cnames).catch(() => configured.tenant.cnames = []));
 
     if (dsc.email_templates) {
       stage1.push(() => {

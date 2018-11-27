@@ -13,11 +13,11 @@
   "author": "João Angelo",
   "license": "ISC",
   "dependencies": {
-    "auth0": "^2.9.1",
+    "auth0": "^2.14.0",
     "concat-stream": "^1.6.0",
     "js-yaml": "^3.7.0",
     "jwt-decode": "^2.1.0",
-    "lodash": "^4.17.2",
+    "lodash": "^4.17.10",
     "mustache": "^2.3.0",
     "superagent": "^3.3.0",
     "yargs": "^6.6.0"
